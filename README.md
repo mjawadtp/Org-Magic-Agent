@@ -24,7 +24,7 @@ In the project root, create a `.env` file and populate it with the environment v
 
 4. **Create environment variables:**
 
-Run 
+Run the follwing in your terminal:
 
 ```bash
 python3 talk_to_agent.py
