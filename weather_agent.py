@@ -47,7 +47,7 @@ def fetch_object_fields_map(sobject: str) -> dict:
 
     headers = {
         # Replace with a valid token before running.
-        "Authorization": "Bearer 00Dxx0000006GqxEAE!AQEAQO0vjnNAJXYYhfZb6N_aUEWQ3GRkJyjC5fjAsbYHlYrQ70wXZ7sIxRUeNawdEEZ4F3zAwV25U3ZjrAwZqQrN9WzdRacY",
+        "Authorization": "Bearer {access_token}",
         "Content-Type": "application/json",
     }
 
