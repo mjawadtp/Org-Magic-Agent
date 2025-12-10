@@ -49,6 +49,7 @@ def metadata_information_for_metadata_type(type):
         # for field in fields:
         #     print(field)
         
+        print(f"Metadata information for {type}: \n", fields)
         return fields
     #print(fields)
     else:
