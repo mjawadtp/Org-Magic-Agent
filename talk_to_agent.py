@@ -10,6 +10,7 @@ from llms.base_classes.chatmodel import EinsteinChatModel
 from langchain_core.tools import tool
 from metadata_processor import get_metadata_information
 from org_utils import deploy_metadata
+from data_utils import fetch_object_fields_map, deploy_csv_records
 from langchain_core.messages import AIMessage
 
 # System instructions for the agent
@@ -28,7 +29,24 @@ SYSTEM_INSTRUCTIONS = (
     "The conversation history contains all previous user inputs and your outputs, so you can reference and modify previous XMLs. "
     "If multiple XML files are in the conversation, consider the most recent one unless the user specifies otherwise. "
     "Use the tool get_metadata_information to get metadata information about the metadata that the user wants to generate an XML for, if the information is available. "
-    "You can also use the deploy_metadata tool to deploy generated XML files to the Salesforce org."
+    "You can also use the deploy_metadata tool to deploy generated XML files to the Salesforce org. "
+    "\n\n"
+    "SAMPLE DATA GENERATION: "
+    "When a user requests to create sample records for a Salesforce entity (e.g., 'create 50 sample records for Account' or 'generate 10 Contact records'), "
+    "you should follow this workflow: "
+    "1. First, use the fetch_object_fields_map tool with the entity's API name (e.g., 'Account', 'Contact', 'CustomObject__c') to get field information. "
+    "   This will return a mapping of field labels to field types, which helps you understand what fields are available and their data types. "
+    "2. Based on the field information, generate sample CSV records. The CSV should: "
+    "   - Include a header row with field API names (not labels) as column headers "
+    "   - Include data rows with realistic sample values matching the field types "
+    "   - Use appropriate data formats (e.g., valid phone numbers for phone fields, valid emails for email fields) "
+    "   - Include required fields (non-nullable fields) with appropriate values "
+    "   - Generate the number of records requested by the user "
+    "3. Use the deploy_csv_records tool to deploy the generated CSV content to the Salesforce org. "
+    "   Pass the CSV content as a string and the entity API name as the sobject parameter. "
+    "4. Report the deployment results to the user, including how many records were successfully created. "
+    "If the user specifies particular fields to include, make sure to include those fields in the CSV. "
+    "If the user doesn't specify fields, include commonly used fields for that entity type based on the field information you retrieved."
 )
 
 
@@ -74,7 +92,7 @@ def interactive_chat():
     
     # Initialize the model and agent once (more efficient)
     model = EinsteinChatModel(api_key="sample", disable_streaming=True)
-    agent = create_react_agent(model, tools=[get_metadata_information, deploy_metadata])
+    agent = create_react_agent(model, tools=[get_metadata_information, deploy_metadata, fetch_object_fields_map, deploy_csv_records])
     
     # Conversation history
     conversation_messages = []
