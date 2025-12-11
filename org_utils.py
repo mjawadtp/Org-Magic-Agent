@@ -9,15 +9,18 @@ import xml.etree.ElementTree as ET
 import yaml
 import re
 from langchain_core.tools import tool
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --------------------------------------------------------
 # ORG CONFIGURATION
 # --------------------------------------------------------
-# Org information - can be set directly or retrieved from SimpleStore
-# To use stored org info, leave these as None and the tool will retrieve from store
-ORG_INSTANCE_URL = os.getenv("ORG_INSTANCE_URL")  # Set to your instance URL, or None to use stored org info
-ORG_ACCESS_TOKEN = os.getenv("ORG_ACCESS_TOKEN")  # Set to your access token, or None to use stored org info
-ORG_API_VERSION = "61.0"  # Default API version
+# Org information loaded from .env file
+ORG_INSTANCE_URL = os.getenv("ORG_INSTANCE_URL")
+ORG_ACCESS_TOKEN = os.getenv("ORG_ACCESS_TOKEN")
+ORG_API_VERSION = os.getenv("ORG_API_VERSION", "61.0")  # Default to 61.0 if not set
 
 
 def deploy_metadata_xml(instance_url: str, access_token: str, metadata_xml: str, api_version: str = "61.0"):
