@@ -382,9 +382,6 @@ def deploy_metadata(metadata_xml: str) -> str:
 # --------------------------------------------------------
 if __name__ == "__main__":
 
-    INSTANCE_URL = os.getenv("ORG_INSTANCE_URL")
-    ACCESS_TOKEN = os.getenv("ORG_ACCESS_TOKEN")
-
     # A full RemoteSiteSetting XML for testing
     TEST_REMOTE_SITE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
@@ -396,4 +393,4 @@ if __name__ == "__main__":
 </RemoteSiteSetting>
 """
 
-    deploy_metadata_xml(INSTANCE_URL, ACCESS_TOKEN, TEST_REMOTE_SITE_XML)
+    deploy_metadata_xml(ORG_INSTANCE_URL, ORG_ACCESS_TOKEN, TEST_REMOTE_SITE_XML)
