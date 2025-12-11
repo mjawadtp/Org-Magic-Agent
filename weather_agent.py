@@ -37,36 +37,6 @@ def get_weather(city: str) -> str:
         return f"Weather data not available for {city}."
 
 
-@tool
-def fetch_object_fields_map(sobject: str) -> dict:
-    """Return label->type map for a Salesforce object's describe."""
-    query_url = (
-        "https://dxx0000006gqxeae.my.salesforce-com.6tjzv89xptfi0hqivm620yn4g1li1qk.ab.crm.dev:6101"
-        f"/services/data/v66.0/sobjects/{sobject}/describe/"
-    )
-
-    headers = {
-        # Replace with a valid token before running.
-        "Authorization": "Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-
-    response = requests.get(query_url, headers=headers, timeout=30)
-    response.raise_for_status()
-    data = response.json()
-
-    return {
-        field["label"]: field.get("type")
-        for field in data.get("fields", [])
-        if (
-            not field.get("nillable", True)
-            and field.get("updateable", False)
-            and field.get("createable", False)
-            and not field.get("defaultedOnCreate", False)
-        )
-    }
-
-
 def main():
     """Test our weather agent."""
 
