@@ -13,7 +13,7 @@ def metadata_information_for_metadata_type(type):
     if not os.path.exists(file_path):
         return []  # Return an empty list if the file does not exist
     
-    print(f'\n ******** Metadata information file found. Processing {file_path} ...   ******* \n')
+    #print(f'\n ******** Metadata information file found. Processing {file_path} ...   ******* \n')
     # Read the HTML file
     with open(file_path, 'r', encoding='utf-8') as file:
         html_content = file.read()
@@ -49,7 +49,6 @@ def metadata_information_for_metadata_type(type):
         # for field in fields:
         #     print(field)
         
-        print(f"Metadata information for {type}: \n", fields)
         return fields
     #print(fields)
     else:
@@ -130,4 +129,5 @@ def get_metadata_information(metadata_type: str) -> list:
     if result == "" or result is None:
         return []
     
+    print(f'\nMetadata information for metadata type {metadata_type} is found. Adding it to LLM\'s context. \n')
     return result
