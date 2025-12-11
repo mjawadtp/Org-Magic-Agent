@@ -24,15 +24,14 @@ def fetch_object_fields_map(sobject: str) -> dict:
     """Fetch field information for a Salesforce SObject to help generate sample records.
     
     This tool retrieves detailed field information about a Salesforce object by calling
-    the Salesforce describe API. It returns a mapping of field labels to their data types,
-    which is essential for generating sample records in CSV format. Use this tool when
-    a user requests to generate sample records for a specific Salesforce entity (e.g., 
-    Account, Contact, CustomObject__c, etc.).
+    the Salesforce describe API. It returns comprehensive information about all fields
+    that can be set during record creation, including their types and required status.
+    Use this tool when a user requests to generate sample records for a specific 
+    Salesforce entity (e.g., Account, Contact, CustomObject__c, etc.).
     
-    The function returns field information filtered to include only required system fields
-    (non-nullable, non-updateable, non-createable, and not defaulted on create). This
-    information helps understand the object structure and field types when generating
-    sample CSV data.
+    The function returns all createable fields (fields that can be set during insert)
+    with their API names, labels, types, and required status. This information is
+    essential for generating sample CSV records with correct field names and values.
     
     Args:
         sobject: The API name of the Salesforce SObject (e.g., "Account", "Contact", 
@@ -40,21 +39,38 @@ def fetch_object_fields_map(sobject: str) -> dict:
                 appears in Salesforce, including the __c suffix for custom objects.
     
     Returns:
-        A dictionary mapping field labels to their data types. For example:
+        A dictionary mapping field API names to field information. For example:
         {
-            "Account Name": "string",
-            "Phone": "phone",
-            "Annual Revenue": "currency",
+            "Name": {
+                "label": "Account Name",
+                "type": "string",
+                "required": true,
+                "nillable": false,
+                "defaultedOnCreate": false
+            },
+            "Phone": {
+                "label": "Phone",
+                "type": "phone",
+                "required": false,
+                "nillable": true,
+                "defaultedOnCreate": false
+            },
             ...
         }
-        This mapping provides field label and type information that can be used to
-        generate CSV records with appropriate column headers and data types matching
-        the Salesforce object structure.
+        
+        Important notes:
+        - Keys are API names (use these in CSV headers)
+        - "required": true means the field must be included in CSV records
+        - "type" indicates the data type (string, phone, email, currency, etc.)
+        - All returned fields are createable (can be set during insert)
     
     Example:
         When a user asks "Generate 10 sample Account records", first call this tool
-        with sobject="Account" to get the field information, then use that information
-        to generate CSV records with appropriate column headers and data types.
+        with sobject="Account" to get the field information. Then:
+        1. Use the API names as CSV column headers
+        2. Generate sample values based on field types
+        3. Ensure all required fields (required: true) are included
+        4. Use the deploy_csv_records tool to deploy the generated CSV
     """
     query_url = (
         f"{ORG_INSTANCE_URL}/services/data/v{ORG_API_VERSION}/sobjects/{sobject}/describe/"
@@ -69,71 +85,57 @@ def fetch_object_fields_map(sobject: str) -> dict:
     response.raise_for_status()
     data = response.json()
 
-    return {
-        field["label"]: field.get("type")
-        for field in data.get("fields", [])
-        if (
-            not field.get("nillable", True)
-            and field.get("updateable", False)
-            and field.get("createable", False)
-            and not field.get("defaultedOnCreate", False)
-        )
-    }
-
-
-def deploy_csv_data(csv_file_path: str, sobject: str) -> dict:
-    """
-    Deploy data from a CSV file to a Salesforce org.
+    # Build a comprehensive field information dictionary
+    # Include all createable fields with their types and required status
+    field_info = {}
     
-    This function reads a CSV file, parses the records, and inserts them into
-    the specified Salesforce object using the Salesforce REST API. It uses the
-    composite API for efficient batch inserts (up to 200 records per request).
+    for field in data.get("fields", []):
+        # Only include fields that can be set during record creation
+        if field.get("createable", False):
+            api_name = field.get("name")  # API name (needed for CSV)
+            label = field.get("label")  # Label for display
+            field_type = field.get("type")
+            
+            # Determine if field is required
+            # A field is required if it's not nullable AND not defaulted on create
+            is_required = (
+                not field.get("nillable", True) 
+                and not field.get("defaultedOnCreate", False)
+            )
+            
+            # Store information with API name as key (since CSV uses API names)
+            field_info[api_name] = {
+                "label": label,
+                "type": field_type,
+                "required": is_required,
+                "nillable": field.get("nillable", True),
+                "defaultedOnCreate": field.get("defaultedOnCreate", False)
+            }
+    
+    print(f"Found {len(field_info)} createable fields for {sobject}")
+    print(f"Required fields: {[name for name, info in field_info.items() if info['required']]}")
+    
+    return field_info
+
+
+def _deploy_csv_records_internal(records: list, sobject: str) -> dict:
+    """
+    Internal function to deploy records to Salesforce using Bulk API 2.0.
     
     Args:
-        csv_file_path: Path to the CSV file containing the data to deploy
-        sobject: The API name of the Salesforce SObject (e.g., "Account", "Contact", 
-                "CustomObject__c", etc.)
+        records: List of dictionaries representing records to deploy
+        sobject: The API name of the Salesforce SObject
     
     Returns:
-        Dictionary containing deployment results:
-        {
-            "success": bool,
-            "total_records": int,
-            "successful": int,
-            "failed": int,
-            "errors": list,
-            "created_ids": list
-        }
-    
-    Example:
-        result = deploy_csv_data("sample_accounts.csv", "Account")
-        print(f"Deployed {result['successful']} out of {result['total_records']} records")
+        Dictionary containing deployment results
     """
-    print(f"\n=== Starting CSV Data Deploy ===")
-    print(f"CSV File: {csv_file_path}")
-    print(f"SObject: {sobject}")
-    
-    # Validate CSV file exists
-    if not os.path.exists(csv_file_path):
-        raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
-    
-    # Read and parse CSV file
-    records = []
-    with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            # Remove empty values and convert to proper format
-            record = {k: v for k, v in row.items() if v and v.strip()}
-            if record:  # Only add non-empty records
-                records.append(record)
-    
     if not records:
         return {
             "success": False,
             "total_records": 0,
             "successful": 0,
             "failed": 0,
-            "errors": ["No records found in CSV file"],
+            "errors": ["No records provided"],
             "created_ids": []
         }
     
@@ -194,10 +196,6 @@ def deploy_csv_data(csv_file_path: str, sobject: str) -> dict:
     # ---------------------------
     print("\nStep 2: Uploading CSV data...")
     upload_url = f"{bulk_api_base}/{job_id}/batches"
-    
-    # Convert records back to CSV format
-    if not records:
-        return all_results
     
     # Get field names from first record
     fieldnames = list(records[0].keys())
@@ -352,6 +350,117 @@ def deploy_csv_data(csv_file_path: str, sobject: str) -> dict:
     
     all_results["success"] = all_results["failed"] == 0
     return all_results
+
+
+def deploy_csv_data(csv_file_path: str, sobject: str) -> dict:
+    """
+    Deploy data from a CSV file to a Salesforce org.
+    
+    This function reads a CSV file, parses the records, and inserts them into
+    the specified Salesforce object using the Salesforce REST API. It uses the
+    composite API for efficient batch inserts (up to 200 records per request).
+    
+    Args:
+        csv_file_path: Path to the CSV file containing the data to deploy
+        sobject: The API name of the Salesforce SObject (e.g., "Account", "Contact", 
+                "CustomObject__c", etc.)
+    
+    Returns:
+        Dictionary containing deployment results:
+        {
+            "success": bool,
+            "total_records": int,
+            "successful": int,
+            "failed": int,
+            "errors": list,
+            "created_ids": list
+        }
+    
+    Example:
+        result = deploy_csv_data("sample_accounts.csv", "Account")
+        print(f"Deployed {result['successful']} out of {result['total_records']} records")
+    """
+    print(f"\n=== Starting CSV Data Deploy ===")
+    print(f"CSV File: {csv_file_path}")
+    print(f"SObject: {sobject}")
+    
+    # Validate CSV file exists
+    if not os.path.exists(csv_file_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
+    
+    # Read and parse CSV file
+    records = []
+    with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            # Remove empty values and convert to proper format
+            record = {k: v for k, v in row.items() if v and v.strip()}
+            if record:  # Only add non-empty records
+                records.append(record)
+    
+    # Use internal function to deploy
+    return _deploy_csv_records_internal(records, sobject)
+
+
+@tool
+def deploy_csv_records(csv_content: str, sobject: str) -> str:
+    """Deploy CSV records to a Salesforce org.
+    
+    This tool accepts CSV content as a string and deploys the records to the specified
+    Salesforce object using Bulk API 2.0. The CSV content should include a header row
+    with field names (API names) as column headers, followed by data rows.
+    
+    Use this tool after generating sample CSV records for a Salesforce entity. First,
+    use fetch_object_fields_map to understand the entity structure, then generate
+    appropriate CSV records with field names matching the Salesforce API field names.
+    
+    Args:
+        csv_content: CSV content as a string, including header row with field names
+                    (API names) and data rows. Example:
+                    "Name,Phone,Website\nAcme Corp,555-0100,https://acme.com\nGlobal Inc,555-0200,https://global.com"
+        sobject: The API name of the Salesforce SObject (e.g., "Account", "Contact", 
+                "CustomObject__c", etc.). Use the exact API name as it appears in Salesforce.
+    
+    Returns:
+        A string describing the deployment result, including:
+        - Total number of records processed
+        - Number of successful and failed records
+        - Error details if any records failed
+        - Created record IDs for successful records
+    
+    Example:
+        When a user asks "create 50 sample records for Account", you should:
+        1. Call fetch_object_fields_map("Account") to get field information
+        2. Generate 50 sample CSV records with appropriate field values
+        3. Call this tool with the CSV content and "Account" as sobject
+        4. Report the results to the user
+    """
+    print(f"\n=== Starting CSV Records Deploy ===")
+    print(f"SObject: {sobject}")
+    
+    # Parse CSV content
+    records = []
+    csv_reader = csv.DictReader(io.StringIO(csv_content))
+    for row in csv_reader:
+        # Remove empty values and convert to proper format
+        record = {k: v for k, v in row.items() if v and v.strip()}
+        if record:  # Only add non-empty records
+            records.append(record)
+    
+    if not records:
+        return "Error: No valid records found in CSV content. Please ensure the CSV has a header row and at least one data row."
+    
+    # Deploy using internal function
+    result = _deploy_csv_records_internal(records, sobject)
+    
+    # Format result as a user-friendly string
+    if result["success"]:
+        return f"✅ Successfully deployed {result['successful']} out of {result['total_records']} records to {sobject}. Created record IDs: {', '.join(result['created_ids'][:10])}" + (f" (and {len(result['created_ids']) - 10} more)" if len(result['created_ids']) > 10 else "")
+    else:
+        error_summary = f"❌ Deployment completed with errors. {result['successful']} successful, {result['failed']} failed out of {result['total_records']} total records."
+        if result['errors']:
+            error_summary += f"\nErrors: {result['errors'][:3]}"  # Show first 3 errors
+        return error_summary
 
 
 # --------------------------------------------------------
