@@ -6,17 +6,40 @@ import time
 import io
 from langchain_core.tools import tool
 from dotenv import load_dotenv
+from org_connection import get_stored_org_credentials
 
-# Load environment variables from .env file
+# Load environment variables from .env file (fallback)
 load_dotenv()
 
 # --------------------------------------------------------
 # ORG CONFIGURATION
 # --------------------------------------------------------
-# Org information loaded from .env file
-ORG_INSTANCE_URL = os.getenv("ORG_INSTANCE_URL")
-ORG_ACCESS_TOKEN = os.getenv("ORG_ACCESS_TOKEN")
-ORG_API_VERSION = os.getenv("ORG_API_VERSION", "61.0")  # Default to 61.0 if not set
+# Org information loaded from SimpleStore (preferred) or .env file (fallback)
+def _get_org_credentials():
+    """Get org credentials from SimpleStore or .env file."""
+    # Try SimpleStore first (user-provided credentials)
+    stored_creds = get_stored_org_credentials()
+    if stored_creds:
+        return stored_creds.get("instance_url"), stored_creds.get("access_token"), stored_creds.get("api_version", "61.0")
+    
+    # Fallback to .env file
+    return (
+        os.getenv("ORG_INSTANCE_URL"),
+        os.getenv("ORG_ACCESS_TOKEN"),
+        os.getenv("ORG_API_VERSION", "61.0")
+    )
+
+def get_org_instance_url():
+    instance_url, _, _ = _get_org_credentials()
+    return instance_url
+
+def get_org_access_token():
+    _, access_token, _ = _get_org_credentials()
+    return access_token
+
+def get_org_api_version():
+    _, _, api_version = _get_org_credentials()
+    return api_version
 
 
 @tool
@@ -72,12 +95,22 @@ def fetch_object_fields_map(sobject: str) -> dict:
         3. Ensure all required fields (required: true) are included
         4. Use the deploy_csv_records tool to deploy the generated CSV
     """
+    # Get org credentials
+    instance_url = get_org_instance_url()
+    access_token = get_org_access_token()
+    api_version = get_org_api_version()
+    
+    if not instance_url or not access_token:
+        return {
+            "error": "No Salesforce org connected. Please use the connect_to_salesforce_org tool first to provide your org credentials (instance_url, username, password)."
+        }
+    
     query_url = (
-        f"{ORG_INSTANCE_URL}/services/data/v{ORG_API_VERSION}/sobjects/{sobject}/describe/"
+        f"{instance_url}/services/data/v{api_version}/sobjects/{sobject}/describe/"
     )
 
     headers = {
-        "Authorization": f"Bearer {ORG_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
 
@@ -141,15 +174,30 @@ def _deploy_csv_records_internal(records: list, sobject: str) -> dict:
     
     print(f"Found {len(records)} records to deploy")
     
+    # Get org credentials
+    instance_url = get_org_instance_url()
+    access_token = get_org_access_token()
+    api_version = get_org_api_version()
+    
+    if not instance_url or not access_token:
+        return {
+            "success": False,
+            "total_records": len(records),
+            "successful": 0,
+            "failed": len(records),
+            "errors": ["No Salesforce org connected. Please use the connect_to_salesforce_org tool first."],
+            "created_ids": []
+        }
+    
     # Prepare headers for JSON requests
     json_headers = {
-        "Authorization": f"Bearer {ORG_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
     
     # Prepare headers for CSV upload
     csv_headers = {
-        "Authorization": f"Bearer {ORG_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "text/csv",
     }
     
@@ -167,7 +215,7 @@ def _deploy_csv_records_internal(records: list, sobject: str) -> dict:
     # Step 1: Create Bulk API 2.0 Job
     # ---------------------------
     print("\nStep 1: Creating Bulk API 2.0 job...")
-    bulk_api_base = f"{ORG_INSTANCE_URL}/services/data/v{ORG_API_VERSION}/jobs/ingest"
+    bulk_api_base = f"{instance_url}/services/data/v{api_version}/jobs/ingest"
     
     job_payload = {
         "operation": "insert",
