@@ -10,17 +10,41 @@ import yaml
 import re
 from langchain_core.tools import tool
 from dotenv import load_dotenv
+from org_connection import get_stored_org_credentials
 
-# Load environment variables from .env file
+# Load environment variables from .env file (fallback)
 load_dotenv()
 
 # --------------------------------------------------------
 # ORG CONFIGURATION
 # --------------------------------------------------------
-# Org information loaded from .env file
-ORG_INSTANCE_URL = os.getenv("ORG_INSTANCE_URL")
-ORG_ACCESS_TOKEN = os.getenv("ORG_ACCESS_TOKEN")
-ORG_API_VERSION = os.getenv("ORG_API_VERSION", "61.0")  # Default to 61.0 if not set
+# Org information loaded from SimpleStore (preferred) or .env file (fallback)
+def _get_org_credentials():
+    """Get org credentials from SimpleStore or .env file."""
+    # Try SimpleStore first (user-provided credentials)
+    stored_creds = get_stored_org_credentials()
+    if stored_creds:
+        return stored_creds.get("instance_url"), stored_creds.get("access_token"), stored_creds.get("api_version", "61.0")
+    
+    # Fallback to .env file
+    return (
+        os.getenv("ORG_INSTANCE_URL"),
+        os.getenv("ORG_ACCESS_TOKEN"),
+        os.getenv("ORG_API_VERSION", "61.0")
+    )
+
+# For backward compatibility, keep these as functions that read from store
+def get_org_instance_url():
+    instance_url, _, _ = _get_org_credentials()
+    return instance_url
+
+def get_org_access_token():
+    _, access_token, _ = _get_org_credentials()
+    return access_token
+
+def get_org_api_version():
+    _, _, api_version = _get_org_credentials()
+    return api_version
 
 
 def deploy_metadata_xml(instance_url: str, access_token: str, metadata_xml: str, api_version: str = "61.0"):
@@ -328,24 +352,29 @@ def deploy_metadata(metadata_xml: str) -> str:
         
         result = deploy_metadata(xml)
     """
-    # Validate we have required org info
-    if not ORG_INSTANCE_URL:
-        return "Error: ORG_INSTANCE_URL is not set at the top of org_utils.py file."
+    # Get org credentials from store
+    instance_url = get_org_instance_url()
+    access_token = get_org_access_token()
+    api_version = get_org_api_version()
     
-    if not ORG_ACCESS_TOKEN:
-        return "Error: ORG_ACCESS_TOKEN is not set at the top of org_utils.py file."
+    # Validate we have required org info
+    if not instance_url:
+        return "Error: No Salesforce org connected. Please use the connect_to_salesforce_org tool first to provide your org credentials (instance_url, username, password)."
+    
+    if not access_token:
+        return "Error: No access token available. Please use the connect_to_salesforce_org tool first to authenticate with your Salesforce org."
     
     # Validate XML
     if not metadata_xml or not metadata_xml.strip():
         return "Error: metadata_xml is required and cannot be empty."
     
     try:
-        # Deploy the metadata using hardcoded org info
+        # Deploy the metadata using stored org credentials
         result = deploy_metadata_xml(
-            instance_url=ORG_INSTANCE_URL,
-            access_token=ORG_ACCESS_TOKEN,
+            instance_url=instance_url,
+            access_token=access_token,
             metadata_xml=metadata_xml,
-            api_version=ORG_API_VERSION
+            api_version=api_version
         )
         
         if not result:
@@ -355,7 +384,7 @@ def deploy_metadata(metadata_xml: str) -> str:
         
         if deploy_result.get("success"):
             components_deployed = deploy_result.get("numberComponentsDeployed", 0)
-            return f"✅ Deployment successful! Deployed {components_deployed} component(s) to {ORG_INSTANCE_URL}"
+            return f"✅ Deployment successful! Deployed {components_deployed} component(s) to {instance_url}"
         else:
             # Build error message
             error_count = deploy_result.get("numberComponentErrors", 0)
